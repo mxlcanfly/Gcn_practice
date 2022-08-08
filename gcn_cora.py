@@ -132,6 +132,7 @@ def train(epochs):
     for epoch in range(epochs):
         output=model(features,adj)
         loss_train=F.nll_loss(output[idx_train],labels[idx_train])
+        #NLLLoss （负对数似然损失）函数输入 input 之前，需要对 input 进行 log_softmax 处理，即将 input 转换成概率分布的形式，并且取对数，底数为 e
         acc_train=accuracy(output[idx_train],labels[idx_train])
         optimizer.zero_grad()
         loss_train.backward()
