@@ -15,7 +15,8 @@ def encode_onehot(labals):  #对输入的特征进行onehot编码
 
     return labal_onehot     #得到每个labals对应的onehot向量
 
-def nomalize(mx):#传入一个稀疏矩阵
+def nomalize(mx):#传入一个稀疏矩阵，（进行归一化的原因）采用加法规则时，对于度大的节点特征越来越大，而对于度小的节点却相反，这可能导致网络训练过程中梯度爆炸或者消失的问题。
+    #这种聚合方式实际上就是在对邻接求和取平均，属于非对称的归一化方式
     rownum=np.array(mx.sum(1))#计算传入矩阵的行和,并且变成1维的array
     r_inv=np.power(rownum,-1).flatten()
     r_inv[np.isinf(r_inv)]=0#由于上边进行了求倒数，故可能出现无穷大的情况，所以这里将无穷大变成了0
@@ -47,13 +48,15 @@ def load_data(path="data/cora/",dataset="cora"):
     idx_features_labels=np.genfromtxt("{}{}.content".format(path,dataset),dtype=np.dtype(str))#从文本文件加载数据，并按指定处理缺失值
     features=sp.csr_matrix(idx_features_labels[:,1:-1],dtype=np.float32)
     labels=encode_onehot(idx_features_labels[:,-1])
-
     #build graph
     idx=np.array(idx_features_labels[:,0],dtype=np.int32)
     idx_map={j:i for i,j in enumerate(idx)}
-    edges_unordered=np.genfromtxt("{}{}.cites".format(path,dataset),dtype=np.int32)
-
-    edges=np.array(list(map(idx_map.get,edges_unordered.flatten())),dtype=np.int32).reshape(edges_unordered.shape)
+    edges_unordered=np.genfromtxt("{}{}.cites".format(path,dataset),dtype=np.int32)#cites中分别是（被引用论文的编号）+（引用论文的编号）
+    # a=edges_unordered.flatten()
+    # c=edges_unordered.shape
+    edges=np.array(list(map(idx_map.get,edges_unordered.flatten())),dtype=np.int32).reshape(edges_unordered.shape)#edges_unordered.shape=(5429,2)
+    # b=idx_map[1033]
+    shapeee=np.ones(edges.shape[0])
     adj = sp.coo_matrix((np.ones(edges.shape[0]), (edges[:, 0], edges[:, 1])),
                         shape=(labels.shape[0],labels.shape[0]),
                         dtype=np.float32)
@@ -62,14 +65,15 @@ def load_data(path="data/cora/",dataset="cora"):
     adj=adj+adj.T.multiply(adj.T > adj)-adj.multiply(adj.T > adj)
 
     features=nomalize(features)
-    adj=nomalize(adj+sp.eye(adj.shape[0]))
+    # a=sp.eye(adj.shape[0])
+    adj=nomalize(adj+sp.eye(adj.shape[0]))#sp.eye生成对角线全是1的矩阵
 
     idx_train=range(140)
     idx_val=range(200,500)
     idx_test=range(500,1500)
 
     features=torch.FloatTensor(np.array(features.todense()))
-    labels=torch.LongTensor(np.where(labels)[1])
+    labels=torch.LongTensor(np.where(labels)[1])#cora只有7类，变成onehot编码之后就可以用编号0~6来代表类别了
     adj=sparse_mx_to_torch_sparse_tensor(adj)
 
     idx_train=torch.LongTensor(idx_train)
@@ -91,7 +95,7 @@ class GraphConvolution(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        nn.init.kaiming_uniform_(self.weight)
+        nn.init.kaiming_uniform_(self.weight)#kaiming正态分布初始化卷积层参数
         if self.use_bias:
             nn.init.zeros_(self.bias)
 
@@ -117,8 +121,11 @@ class GCN(nn.Module):
 
         return F.log_softmax(X,dim=1)
 
+#gcn一般可以分成两个模块，第一个模块叫做GraphConvolution，是来进行图邻接矩阵等的处理和需要参数的初始化，在其内的forward中得到一个输出
+#而后是GCN模块，主要类似于CNN的backbone，进行网络架构的设计，最终输出的结果就是每个节点的特征
+
 adj, features, labels, idx_train, idx_val, idx_test = load_data()
-model=GCN(features.shape[1])
+model=GCN()#features.shape[1]
 optimizer=optim.Adam(model.parameters(),lr=0.01,weight_decay=5e-4)
 
 def train(epochs):
